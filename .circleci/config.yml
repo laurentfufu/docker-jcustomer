@@ -68,7 +68,7 @@ commands:
             set +o pipefail
             for i in {1..666}; do
               echo "iteration $i/666..."
-              curl "http://localhost:8181/context.json?sessionId=abricot" -s | python json.tool
+              curl "http://localhost:8181/context.json?sessionId=abricot" -s | python -m json.tool
               if [ $? -eq 0 ]; then
               echo "Jcustomer send a json, that's ok"
                 exit 0
@@ -168,16 +168,16 @@ workflows:
   version: 2
   build_all_jcustomer:
     jobs:
-      - b151:
-          context: cloud-qa
-          filters:
-            branches:
-              only: master
+      #- b151:
+      #    context: cloud-qa
+      #    filters:
+      #      branches:
+      #        only: master
       - t151:
           context: cloud-qa
           filters:
             branches:
               only: master
-          requires:
-            - b151
+      #    requires:
+      #      - b151
 
