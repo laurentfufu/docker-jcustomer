@@ -19,9 +19,6 @@ commands:
       tag_suffix:
         type: string
         default: "<< pipeline.git_branch >>"
-      latest:
-        type: boolean
-        default: false
     steps:
       - setup_remote_docker
       - checkout
@@ -169,7 +166,6 @@ jobs:
     steps:
       - build_jcustomer:
           jver: "1.5.1"
-          latest: true
           base_url: "https://downloads.jahia.com/downloads/jahia/jcustomer/jcustomer-1.5.1.tar.gz"
   t151:
     docker:
@@ -184,6 +180,7 @@ jobs:
     steps:
       - publish_image:
           jver: "1.5.1"
+          latest: true
 
 
 workflows:
