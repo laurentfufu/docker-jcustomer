@@ -8,6 +8,9 @@ commands:
   build_jcustomer:
     description: "Build Jahia's images for jahiastic-jahia"
     parameters:
+      repo:
+        type: string
+        default: build2test
       jver:
         type: string
       base_url:
@@ -17,7 +20,7 @@ commands:
         default: "<< pipeline.git_branch >>"
       latest:
         type: boolean
-        default: False
+        default: false
     steps:
       - setup_remote_docker
       - checkout
@@ -25,7 +28,7 @@ commands:
       - docker/build:
           step-name: "Build jahia/jcustomer:<< parameters.jver >><< parameters.tag_suffix >>"
           tag: "<< parameters.jver >><< parameters.tag_suffix >>"
-          image: "jahia/jcustomer"
+          image: "jahia/<< parameters.repo >>"
           dockerfile: Dockerfile
           extra_build_args:
             '
@@ -33,26 +36,147 @@ commands:
             --no-cache
             '
       - docker/push:
-          step-name: "Push jahia/jcustomer:<< parameters.jver >><< parameters.tag_suffix >>"
-          image: "jahia/jcustomer"
+          step-name: "Push to test repo jahia/<< parameters.repo >>:<< parameters.jver >><< parameters.tag_suffix >>"
+          image: "jahia/<< parameters.repo >>"
           tag: "<< parameters.jver >><< parameters.tag_suffix >>"
+      #- slack/status:
+      #    failure_message: |
+      #      ':alert: Building jcustomer:<< parameters.jver >><< parameters.tag_suffix >> has failed !'
+      #    success_message: |
+      #      ':building_construction: Building jcustomer:<< parameters.jver >><< parameters.tag_suffix >> successfully.'
+
+  test_jcustomer:
+    description: "Testing jcustomer image"
+    parameters:
+      jver:
+        type: string
+      tag_suffix:
+        type: string
+        default: "<< pipeline.git_branch >>"
+    steps:
+      - run:
+          name: start jcustomer entrypoint
+          background: true
+          command: |
+            set +o pipefail
+            env
+            free -m
+            /entrypoint.sh
+      - run:
+          name: healtcheck test and push
+          command: |
+            set +o pipefail
+            for i in {1..666}; do
+              echo "iteration $i/666..."
+              curl "http://localhost:8181/context.json?sessionId=abricot" -s | python json.tool
+              if [ $? -eq 0 ]; then
+              echo "Jcustomer send a json, that's ok"
+                exit 0
+              fi
+              echo "Not ready yet"
+              echo
+              sleep 1
+            done
+            echo "you are a failure"
+            exit 1
+      #- slack/status:
+      #    failure_message: |
+      #      ':alert: Testing jcustomer:<< parameters.jver >><< parameters.tag_suffix >> has failed !'
+      #    success_message: |
+      #      ':heartpulse: Testing jcustomer:<< parameters.jver >><< parameters.tag_suffix >> successfully.'
+
+  publish_image:
+    description: "Push tested image to public repo"
+    parameters:
+      repo:
+        type: string
+        default: jcustomer
+      repo_source:
+        type: string
+        default: build2test
+      jver:
+        type: string
+      tag_suffix:
+        type: string
+        default: "<< pipeline.git_branch >>"
+      latest:
+        type: boolean
+        default: false
+    steps:
+      - setup_remote_docker
+      - checkout
+      - docker/check
+      - docker/pull:
+          images: "jahia/<< parameters.repo_source >>:<< parameters.jver >><< parameters.tag_suffix >>"
+      - run:
+          name: "set final name to image"
+          command: |
+            docker tag \
+              jahia/<< parameters.repo_source >>:<< parameters.jver >><< parameters.tag_suffix >> \
+              jahia/<< parameters.repo >>:<< parameters.jver >><< parameters.tag_suffix >>
+      - docker/push:
+          step-name: "Push to final repo jahia/<< parameters.repo >>:<< parameters.jver >><< parameters.tag_suffix >>"
+          image: "jahia/<< parameters.repo >>"
+          tag: "<< parameters.jver >><< parameters.tag_suffix >>"
+      - when:
+          condition: << parameters.latest >>
+          steps:
+            - run:
+                name: "set latest tag to image"
+                command: |
+                  docker tag \
+                    jahia/<< parameters.repo >>:<< parameters.jver >><< parameters.tag_suffix >> \
+                    jahia/<< parameters.repo >>:latest
+            - docker/push:
+                step-name: "Pushing jahia/<< parameters.repo >>:latest"
+                image: "jahia/<< parameters.repo >>"
+                tag: "latest"
+      #- slack/status:
+      #    failure_message: |
+      #      ':alert: Publishing jcustomer:<< parameters.jver >><< parameters.tag_suffix >> has failed !'
+      #    success_message: |
+      #      ':whale2: Publishing jcustomer:<< parameters.jver >><< parameters.tag_suffix >> successfully.'
 
 jobs:
-  v1_5_1:
+  b151:
     executor: docker/docker
     steps:
       - build_jcustomer:
           jver: "1.5.1"
           tag_suffix: ""
-          latest: True
+          latest: true
           base_url: "https://downloads.jahia.com/downloads/jahia/jcustomer/jcustomer-1.5.1.tar.gz"
+  t151:
+    docker:
+      - image: jahia/build2test:1.5.1
+        environment:
+          unomi_env_var_UNOMI_ELASTICSEARCH_ADDRESSES: localhost:9200
+          unomi_env_var_UNOMI_ELASTICSEARCH_CLUSTERNAME: elasticsearch-cluster
+          unomi_env_var_UNOMI_CLUSTER_INTERNAL_ADDRESS: https://localhost:9443
+          unomi_env_var_UNOMI_CLUSTER_PUBLIC_ADDRESS: http://localhost:8181
+          unomi_env_var_KARAF_OPTS: "-Dunomi.autoStart=true"
+      - image: elasticsearch:7.6.1
+        environment:
+          discovery.type: single-node
+          xpack.security.enabled: "false"
+    steps:
+      - test_jcustomer:
+          jver: "1.5.1"
+
 
 workflows:
   version: 2
   build_all_jcustomer:
     jobs:
-      - v1_5_1:
+      - b151:
           context: cloud-qa
           filters:
             branches:
               only: master
+      - t151:
+          context: cloud-qa
+          filters:
+            branches:
+              only: master
+          requires:
+            - b151
