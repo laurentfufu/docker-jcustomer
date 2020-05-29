@@ -3,6 +3,7 @@ version: 2.1
 
 orbs:
   docker: circleci/docker@1.0.1
+  slack: circleci/slack@3.4.2
 
 commands:
   build_jcustomer:
@@ -39,11 +40,11 @@ commands:
           step-name: "Push to test repo jahia/<< parameters.repo >>:<< parameters.jver >><< parameters.tag_suffix >>"
           image: "jahia/<< parameters.repo >>"
           tag: "<< parameters.jver >><< parameters.tag_suffix >>"
-      #- slack/status:
-      #    failure_message: |
-      #      ':alert: Building jcustomer:<< parameters.jver >><< parameters.tag_suffix >> has failed !'
-      #    success_message: |
-      #      ':building_construction: Building jcustomer:<< parameters.jver >><< parameters.tag_suffix >> successfully.'
+      - slack/status:
+          failure_message: |
+            ':alert: Building jcustomer:<< parameters.jver >><< parameters.tag_suffix >> has failed !'
+          success_message: |
+            ':building_construction: Building jcustomer:<< parameters.jver >><< parameters.tag_suffix >> successfully.'
 
   test_jcustomer:
     description: "Testing jcustomer image"
@@ -79,11 +80,11 @@ commands:
             done
             echo "you are a failure"
             exit 1
-      #- slack/status:
-      #    failure_message: |
-      #      ':alert: Testing jcustomer:<< parameters.jver >><< parameters.tag_suffix >> has failed !'
-      #    success_message: |
-      #      ':heartpulse: Testing jcustomer:<< parameters.jver >><< parameters.tag_suffix >> successfully.'
+      - slack/status:
+          failure_message: |
+            ':alert: Testing jcustomer:<< parameters.jver >><< parameters.tag_suffix >> has failed !'
+          success_message: |
+            ':heartpulse: Testing jcustomer:<< parameters.jver >><< parameters.tag_suffix >> successfully.'
 
   publish_image:
     description: "Push tested image to public repo"
@@ -131,11 +132,36 @@ commands:
                 step-name: "Pushing jahia/<< parameters.repo >>:latest"
                 image: "jahia/<< parameters.repo >>"
                 tag: "latest"
-      #- slack/status:
-      #    failure_message: |
-      #      ':alert: Publishing jcustomer:<< parameters.jver >><< parameters.tag_suffix >> has failed !'
-      #    success_message: |
-      #      ':whale2: Publishing jcustomer:<< parameters.jver >><< parameters.tag_suffix >> successfully.'
+      - slack/status:
+          failure_message: |
+            ':alert: Publishing jcustomer:<< parameters.jver >><< parameters.tag_suffix >> has failed !'
+          success_message: |
+            ':whale2: Publishing jcustomer:<< parameters.jver >><< parameters.tag_suffix >> successfully.'
+
+
+######### commun stuff
+job_options: &job_options
+  context: coud-qa
+  filters:
+    branches:
+      only: master
+es_env: &es_env
+  environment:
+    discovery.type: single-node
+    xpack.security.enabled: "false"
+es_container: &es_container
+  - image: elasticsearch:7.6.1
+    <<: *es_env
+jc_env: &jc_env
+  environment:
+    unomi_env_var_UNOMI_ELASTICSEARCH_ADDRESSES: localhost:9200
+    unomi_env_var_UNOMI_ELASTICSEARCH_CLUSTERNAME: elasticsearch-cluster
+    unomi_env_var_UNOMI_CLUSTER_INTERNAL_ADDRESS: https://localhost:9443
+    unomi_env_var_UNOMI_CLUSTER_PUBLIC_ADDRESS: http://localhost:8181
+    unomi_env_var_KARAF_OPTS: "-Dunomi.autoStart=true"
+
+
+
 
 jobs:
   b151:
@@ -143,22 +169,18 @@ jobs:
     steps:
       - build_jcustomer:
           jver: "1.5.1"
-          tag_suffix: ""
           latest: true
           base_url: "https://downloads.jahia.com/downloads/jahia/jcustomer/jcustomer-1.5.1.tar.gz"
   t151:
     docker:
       - image: jahia/build2test:1.5.1
-        environment:
-          unomi_env_var_UNOMI_ELASTICSEARCH_ADDRESSES: localhost:9200
-          unomi_env_var_UNOMI_ELASTICSEARCH_CLUSTERNAME: elasticsearch-cluster
-          unomi_env_var_UNOMI_CLUSTER_INTERNAL_ADDRESS: https://localhost:9443
-          unomi_env_var_UNOMI_CLUSTER_PUBLIC_ADDRESS: http://localhost:8181
-          unomi_env_var_KARAF_OPTS: "-Dunomi.autoStart=true"
-      - image: elasticsearch:7.6.1
-        environment:
-          discovery.type: single-node
-          xpack.security.enabled: "false"
+        <<: *jc_env
+      - <<: *es_container
+    steps:
+      - test_jcustomer:
+          jver: "1.5.1"
+  p151:
+    executor: docker/docker
     steps:
       - test_jcustomer:
           jver: "1.5.1"
@@ -168,16 +190,18 @@ workflows:
   version: 2
   build_all_jcustomer:
     jobs:
-      #- b151:
-      #    context: cloud-qa
-      #    filters:
-      #      branches:
-      #        only: master
-      - t151:
+      - b151:
+          <<: *job_options
           context: cloud-qa
           filters:
             branches:
               only: master
-      #    requires:
-      #      - b151
+      - t151:
+          <<: *job_options
+          requires:
+            - b151
+      - p151:
+          <<: *job_options
+          requires:
+            - t151
 
