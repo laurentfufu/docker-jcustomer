@@ -141,7 +141,7 @@ commands:
 
 ######### commun stuff
 job_options: &job_options
-  context: coud-qa
+  context: cloud-qa
   filters:
     branches:
       only: master
@@ -192,10 +192,6 @@ workflows:
     jobs:
       - b151:
           <<: *job_options
-          context: cloud-qa
-          filters:
-            branches:
-              only: master
       - t151:
           <<: *job_options
           requires:
