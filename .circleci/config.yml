@@ -182,7 +182,7 @@ jobs:
   p151:
     executor: docker/docker
     steps:
-      - test_jcustomer:
+      - publish_image:
           jver: "1.5.1"
 
 
