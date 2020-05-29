@@ -65,8 +65,8 @@ commands:
       - run:
           name: healtcheck test and push
           command: |
+            set +eo pipefail
             for i in {1..666}; do
-              set +o pipefail
               echo "iteration $i/666..."
               curl "http://localhost:8181/context.json?sessionId=abricot" -s | python -m json.tool
               if [ $? -eq 0 ]; then
